@@ -73,7 +73,10 @@ export default function App() {
       if (h1Type === 'left' && point.x <= cv[0]) isTail = true;
       if (h1Type === 'right' && point.x >= cv[0]) isTail = true;
     }
-    return { ...point, yTail: isTail ? point.y : 0 };
+    return { ...point, 
+      yTail: isTail ? point.y : 0,
+      yAccept: !isTail ? point.y : 0
+    };
   });
 
 // Helper function to mathematically interpolate the exact height of the curve
@@ -308,6 +311,74 @@ export default function App() {
                           <span>[ (n - 1)S² ] / χ²<sub>R</sub> &lt; σ² &lt; [ (n - 1)S² ] / χ²<sub>L</sub></span>
                         )}
 
+                        {/* Lecture Method Breakdown: Confidence Intervals */}
+                        {activeTab === 'interval' && resultData.criticalValues?.length > 0 && (
+                          <div className="mt-6 bg-slate-50 border border-slate-100 rounded-2xl p-5 text-left mb-6">
+                            <h4 className="text-xs font-black uppercase tracking-widest text-slate-400 mb-4">Lecture Method Breakdown</h4>
+                            <div className="space-y-3">
+                              
+                              {/* Step 1: Identify Givens */}
+                              <div>
+                                <span className="font-bold text-blue-600">Step 1:</span> Identify given information.
+                                <div className="font-mono text-sm mt-1 text-slate-600 bg-white p-3 rounded-xl border border-slate-200">
+                                  n = {n}, α = {(1 - confLevel/100).toFixed(2)}
+                                  {mode === 'mean' && <>, x̄ = {mean}, {isSigmaKnown || n >= 30 ? 'σ' : 'S'} = {stdDev}</>}
+                                  {mode === 'proportion' && <>, p̂ = {(successes/n).toFixed(4)}</>}
+                                  {mode === 'variance' && <>, S² = {sampleVariance}, df = {Math.max(1, n - 1)}</>}
+                                </div>
+                              </div>
+
+                              {/* Step 2: Critical Value */}
+                              <div>
+                                <span className="font-bold text-blue-600">Step 2:</span> Find the critical value(s).
+                                <div className="font-mono text-sm mt-1 text-slate-600 bg-white p-3 rounded-xl border border-slate-200">
+                                  {mode === 'variance' ? (
+                                    <>
+                                      χ²_R = {resultData.criticalValues[1].toFixed(4)} <br/>
+                                      χ²_L = {resultData.criticalValues[0].toFixed(4)}
+                                    </>
+                                  ) : (
+                                    <>
+                                      {isSigmaKnown || n >= 30 || mode === 'proportion' ? 'Z' : 't'}_(α/2) = {resultData.criticalValues[1].toFixed(4)}
+                                    </>
+                                  )}
+                                </div>
+                              </div>
+
+                              {/* Step 3: Formula Substitution */}
+                              <div>
+                                <span className="font-bold text-blue-600">Step 3:</span> Substitute into formula.
+                                <div className="font-mono text-sm mt-1 text-slate-600 bg-white p-3 rounded-xl border border-slate-200 overflow-x-auto whitespace-nowrap">
+                                  {mode === 'mean' && (
+                                    <>
+                                      {mean} ± {resultData.criticalValues[1].toFixed(4)} * ({stdDev} / √{n})
+                                    </>
+                                  )}
+                                  {mode === 'proportion' && (
+                                    <>
+                                      {(successes/n).toFixed(4)} ± {resultData.criticalValues[1].toFixed(4)} * √[ ({(successes/n).toFixed(4)} * {1 - (successes/n).toFixed(4)}) / {n} ]
+                                    </>
+                                  )}
+                                  {mode === 'variance' && (
+                                    <>
+                                      [ ({n} - 1) * {sampleVariance} ] / {resultData.criticalValues[1].toFixed(4)} &lt; σ² &lt; [ ({n} - 1) * {sampleVariance} ] / {resultData.criticalValues[0].toFixed(4)}
+                                    </>
+                                  )}
+                                </div>
+                              </div>
+
+                              {/* Step 4: Final Interval */}
+                              <div>
+                                <span className="font-bold text-blue-600">Step 4:</span> Final Confidence Interval.
+                                <div className="font-mono text-sm mt-1 text-slate-600 bg-white p-3 rounded-xl border border-slate-200">
+                                  {resultData.result}
+                                </div>
+                              </div>
+                              
+                            </div>
+                          </div>
+                        )}
+                        
                         {activeTab === 'hypothesis' && mode === 'mean' && (
                           <span>{isSigmaKnown || n >= 30 ? 'Z' : 't'} = (x̄ - μ<sub>0</sub>) / ({isSigmaKnown || n >= 30 ? 'σ' : 'S'} / √n)</span>
                         )}
@@ -391,16 +462,18 @@ export default function App() {
                     <ResponsiveContainer width="100%" height="100%">
                       <AreaChart data={chartDataWithTails} margin={{ top: 20, right: 20, left: 0, bottom: 45 }}>
                         <CartesianGrid strokeDasharray="3 3" opacity={0.2} vertical={false} />
-                        <XAxis dataKey="x" type="number" domain={['dataMin', 'dataMax']} tick={{fill: '#94a3b8', fontWeight: 'bold'}} />
-                        <YAxis tick={false} axisLine={false} />
+                        <XAxis dataKey="x" type="number" domain={['dataMin', 'dataMax']} tick={{fill: '#94a3b8', fontWeight: 'bold'}} 
+                        axisLine={{ stroke: '#475569', strokeWidth: 2 }} tickLine={{ stroke: '#475569', strokeWidth: 2 }} />
+                        <YAxis tick={false} axisLine={false} width={10} />
                         <Tooltip formatter={(value) => value.toFixed(4)} contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}/>
 
+                      
                       {/* 3. The Dotted Critical Lines (Smart Staggering!) */}
                         {resultData.criticalValues?.map((val, idx) => (
                           <ReferenceLine 
-                            key={idx} 
-                            segment={[{ x: val, y: 0 }, { x: val, y: getCurveHeight(val) }]} 
-                            stroke="#ef4444" 
+                          key={idx} 
+                          segment={[{ x: val, y: 0 }, { x: val, y: getCurveHeight(val) }]} 
+                          stroke="#ef4444" 
                             strokeWidth={2} 
                             strokeDasharray="4 4" 
                             label={{ 
@@ -410,30 +483,32 @@ export default function App() {
                               fontWeight: 'bold',
                               dy: (areCritsClose && idx === 1) ? 40 : 25 // Only drops down if they are actually squished!
                             }} 
-                          />
-                        ))}
-                        
+                            />
+                          ))}
                       {/* 4. Your Green Test Statistic Marker (Dynamically offsets text to avoid the curve) */}
                         {resultData.testStatistic !== undefined && resultData.testStatistic !== null && (
-                          <ReferenceLine 
-                            segment={[
-                              { x: resultData.testStatistic, y: 0 }, 
-                              { x: resultData.testStatistic, y: getCurveHeight(resultData.testStatistic) }
-                            ]} 
-                            stroke="#10b981" 
-                            strokeWidth={3} 
-                            label={{ 
-                              position: 'top', 
-                              value: `Stat: ${resultData.testStatistic.toFixed(2)}`, 
-                              fill: '#10b981', 
-                              fontWeight: 'bold', 
-                              fontSize: 16,
-                              dy: -10,
-                              dx: resultData.testStatistic >= 0 ? 40 : -40 // The magic fix!
-                            }} 
+                          <ReferenceLine
+                          segment={[
+                            { x: resultData.testStatistic, y: 0 },
+                            { x: resultData.testStatistic, y: getCurveHeight(resultData.testStatistic) }
+                          ]}
+                          stroke={resultData.result?.includes('Reject') ? '#ef4444' : '#10b981'}
+                          strokeWidth={3}
+                          label={{
+                            position: 'top',
+                            value: `Stat: ${resultData.testStatistic.toFixed(2)}`,
+                            fill: resultData.result?.includes('Reject') ? '#ef4444' : '#10b981',
+                            fontWeight: 'bold',
+                            fontSize: 16,
+                            dy: -10,
+                            dx: resultData.testStatistic >= 0 ? 40 : -40 // The magic fix!
+                          }}
                           />
                         )}
+                        {/* 3. The Green Accept Region (Paints the middle!) */}
+                        <Area type="linear" dataKey="yAccept" stroke="none" fill="#10b981" fillOpacity={0.3} />
 
+                        <ReferenceLine x={0} stroke="#475569" strokeWidth={2} />
                         {/* 2. TRUE Shaded Tails (Paints behind the main blue stroke) */}
                         <Area type="linear" dataKey="yTail" stroke="none" fill="#ef4444" fillOpacity={0.3} />
 

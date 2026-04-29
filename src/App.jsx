@@ -24,6 +24,7 @@ export default function App() {
   const [resultData, setResultData] = useState(null);
   const [inputError, setInputError] = useState(null);
 
+  const [inputModeS, setInputModeS] = useState(false); // false = S², true = S
 
   const handleCalculate = async () => {
     let rawData = null;
@@ -41,10 +42,13 @@ export default function App() {
     }
     setInputError(null);
 
+    // Calculate true variance to send to backend
+    const computedVariance = inputModeS ? Number(sampleVariance) ** 2 : Number(sampleVariance);
+
     try {
       const response = await axios.post('http://localhost:8000/calculate', {
         calcType: activeTab, mode, confLevel: Number(confLevel), alpha: Number(alpha),
-        n: Number(n), mean: Number(mean), stdDev: Number(stdDev), sampleVariance: Number(sampleVariance), 
+        n: Number(n), mean: Number(mean), stdDev: Number(stdDev), sampleVariance: computedVariance, 
         isSigmaKnown, successes: Number(successes), h0: Number(h0), h1Type, marginError: Number(marginError), rawData
       });
       setResultData(response.data);
@@ -54,14 +58,14 @@ export default function App() {
     }
   };
 
-    // Auto-Calculate Hook
+  // Auto-Calculate Hook
   useEffect(() => {
     const delayDebounceFn = setTimeout(() => {
       handleCalculate();
     }, 400); 
     return () => clearTimeout(delayDebounceFn);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeTab, mode, rawDataStr, n, mean, stdDev, sampleVariance, isSigmaKnown, successes, h0, h1Type, confLevel, alpha, marginError]);
+  }, [activeTab, mode, rawDataStr, n, mean, stdDev, sampleVariance, isSigmaKnown, successes, h0, h1Type, confLevel, alpha, marginError, inputModeS]);
 
   // Mathematically map the tails so they only shade strictly under the curve
   const chartDataWithTails = resultData?.chartData?.map(point => {
@@ -79,7 +83,7 @@ export default function App() {
     };
   });
 
-// Helper function to mathematically interpolate the exact height of the curve
+  // Helper function to mathematically interpolate the exact height of the curve
   const getCurveHeight = (targetX) => {
     if (!chartDataWithTails || chartDataWithTails.length === 0) return 0;
     
@@ -118,6 +122,9 @@ export default function App() {
   const areCritsClose = resultData?.criticalValues?.length === 2 && 
                         ((resultData.criticalValues[1] - resultData.criticalValues[0]) / domainWidth) < 0.15;
 
+  // Ensure the UI prints the true mathematical variance
+  const displayVar = inputModeS ? Number((Number(sampleVariance) ** 2).toFixed(4)) : sampleVariance;
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-blue-50 p-6 font-sans text-slate-800">
       <div className="max-w-6xl mx-auto">
@@ -125,9 +132,10 @@ export default function App() {
         {/* Header */}
         <div className="text-center mb-8">
           <h1 className="text-5xl font-black text-transparent bg-clip-text bg-gradient-to-r from-blue-600 to-indigo-600 mb-2 py-1">
-            Statistical Engine Pro
+            {/* Statistical Engine */}
+            Baraa Allam
           </h1>
-          <p className="text-lg font-medium text-slate-500">Lectures 4 • 5 • 6 • 7 — Dr. Mohamed E. Sobh</p>
+          <p className="text-lg font-medium text-slate-500">Lectures 4 • 5 • 6 • 7</p>
         </div>
 
         {/* Top Navigation */}
@@ -203,16 +211,32 @@ export default function App() {
                       {activeTab !== 'samplesize' && (
                         <div className="flex items-center pt-1">
                           <input type="checkbox" checked={isSigmaKnown} onChange={e => setIsSigmaKnown(e.target.checked)} className="w-4 h-4 text-blue-600 rounded" />
-                          <label className="ml-2 text-sm font-bold text-slate-600">Pop. Variance (σ²) Known?</label>
+                          <label className="ml-2 text-sm font-bold text-slate-600">Pop. SD (σ) Known?</label>
                         </div>
                       )}
                     </>
                   )}
 
                   {mode === 'variance' && activeTab !== 'samplesize' && (
-                    <div>
-                      <label className="block text-sm font-bold text-slate-700 mb-1">Sample Variance (S²)</label>
-                      <input type="number" step="0.01" value={sampleVariance} onChange={e => setSampleVariance(e.target.value)} className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" />
+                    <div className="space-y-2">
+                      <div className="flex justify-between items-center">
+                        <label className="block text-sm font-bold text-slate-700">
+                          {inputModeS ? 'Sample Std Dev (S)' : 'Sample Variance (S²)'}
+                        </label>
+                        <button 
+                          onClick={() => setInputModeS(!inputModeS)}
+                          className="text-[10px] bg-slate-100 px-2 py-1 rounded-md hover:bg-slate-200 font-bold text-slate-500 transition-colors"
+                        >
+                          SWITCH TO {inputModeS ? 'S²' : 'S'}
+                        </button>
+                      </div>
+                      <input 
+                        type="number" 
+                        step="0.01" 
+                        value={sampleVariance} 
+                        onChange={e => setSampleVariance(e.target.value)} 
+                        className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" 
+                      />
                     </div>
                   )}
 
@@ -324,7 +348,7 @@ export default function App() {
                                   n = {n}, α = {(1 - confLevel/100).toFixed(2)}
                                   {mode === 'mean' && <>, x̄ = {mean}, {isSigmaKnown || n >= 30 ? 'σ' : 'S'} = {stdDev}</>}
                                   {mode === 'proportion' && <>, p̂ = {(successes/n).toFixed(4)}</>}
-                                  {mode === 'variance' && <>, S² = {sampleVariance}, df = {Math.max(1, n - 1)}</>}
+                                  {mode === 'variance' && <>, S² = {displayVar}, df = {Math.max(1, n - 1)}</>}
                                 </div>
                               </div>
 
@@ -361,7 +385,7 @@ export default function App() {
                                   )}
                                   {mode === 'variance' && (
                                     <>
-                                      [ ({n} - 1) * {sampleVariance} ] / {resultData.criticalValues[1].toFixed(4)} &lt; σ² &lt; [ ({n} - 1) * {sampleVariance} ] / {resultData.criticalValues[0].toFixed(4)}
+                                      [ ({n} - 1) * {displayVar} ] / {resultData.criticalValues[1].toFixed(4)} &lt; σ² &lt; [ ({n} - 1) * {displayVar} ] / {resultData.criticalValues[0].toFixed(4)}
                                     </>
                                   )}
                                 </div>
@@ -437,7 +461,7 @@ export default function App() {
                             {mode === 'variance' && (
                               <>
                                 χ² = (n - 1)S² / σ²₀ <br/>
-                                χ² = ({n} - 1) × {sampleVariance} / {h0} <br/>
+                                χ² = ({n} - 1) × {displayVar} / {h0} <br/>
                                 χ² = {resultData.testStatistic.toFixed(3)}
                               </>
                             )}

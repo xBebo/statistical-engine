@@ -153,7 +153,6 @@ def calculate_stats(req: StatRequest):
                 
             p_hat = req.successes / req.n
             test_stat = (p_hat - req.h0) / np.sqrt((req.h0 * (1 - req.h0)) / req.n)
-            # ... the rest of the code stays exactly the same
             
             if req.h1Type == "left":
                 crit = stats.norm.ppf(a)
@@ -174,6 +173,12 @@ def calculate_stats(req: StatRequest):
             response_data["chartData"] = generate_curve_data("Z", 1, response_data["criticalValues"] + [test_stat])
 
         elif req.mode == "variance":
+            # Safety check: Prevent division by zero
+            if req.h0 <= 0:
+                response_data["result"] = "Math Error"
+                response_data["details"] = "H0 for variance must be > 0"
+                return response_data
+
             df = max(1, req.n - 1)
             test_stat = (df * req.sampleVariance) / req.h0
             

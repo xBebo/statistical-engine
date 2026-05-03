@@ -122,6 +122,11 @@ export default function App() {
   const areCritsClose = resultData?.criticalValues?.length === 2 && 
                         ((resultData.criticalValues[1] - resultData.criticalValues[0]) / domainWidth) < 0.15;
 
+  // Extract the Confidence Interval bounds from the result string to use as graph labels
+  const ciBounds = activeTab === 'interval' && resultData?.result?.startsWith('[') 
+    ? resultData.result.replace(/[\[\]]/g, '').split(',').map(s => s.trim()) 
+    : null;
+
   // Ensure the UI prints the true mathematical variance
   const displayVar = inputModeS ? Number((Number(sampleVariance) ** 2).toFixed(4)) : sampleVariance;
 
@@ -492,24 +497,32 @@ export default function App() {
                         <Tooltip formatter={(value) => value.toFixed(4)} contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}/>
 
                       
-                      {/* 3. The Dotted Critical Lines (Smart Staggering!) */}
-                        {resultData.criticalValues?.map((val, idx) => (
-                          <ReferenceLine 
-                          key={idx} 
-                          segment={[{ x: val, y: 0 }, { x: val, y: getCurveHeight(val) }]} 
-                          stroke="#ef4444" 
-                            strokeWidth={2} 
-                            strokeDasharray="4 4" 
-                            label={{ 
-                              position: 'bottom', 
-                              value: `Crit: ${val.toFixed(2)}`, 
-                              fill: '#ef4444', 
-                              fontWeight: 'bold',
-                              dy: (areCritsClose && idx === 1) ? 40 : 25 // Only drops down if they are actually squished!
-                            }} 
+                      {/* 3. The Dotted Boundary Lines (Blue for CI, Red for Hypothesis!) */}
+                        {resultData.criticalValues?.map((val, idx) => {
+                          let lineLabel = `Crit: ${val.toFixed(2)}`;
+                          if (activeTab === 'interval' && ciBounds && ciBounds.length === resultData.criticalValues.length) {
+                            lineLabel = ciBounds[idx];
+                          }
+                          const lineColor = activeTab === 'interval' ? "#3b82f6" : "#ef4444"; // Blue for interval, red for testing
+                          
+                          return (
+                            <ReferenceLine 
+                              key={idx} 
+                              segment={[{ x: val, y: 0 }, { x: val, y: getCurveHeight(val) }]} 
+                              stroke={lineColor} 
+                              strokeWidth={2} 
+                              strokeDasharray="4 4" 
+                              label={{ 
+                                position: 'bottom', 
+                                value: lineLabel, 
+                                fill: lineColor, 
+                                fontWeight: 'bold',
+                                dy: (areCritsClose && idx === 1) ? 40 : 25 
+                              }} 
                             />
-                          ))}
-                      {/* 4. Your Green Test Statistic Marker (Dynamically offsets text to avoid the curve) */}
+                          );
+                        })}
+                      {/* 4. Your Green/Red Test Statistic Marker (Only for Hypothesis) */}
                         {resultData.testStatistic !== undefined && resultData.testStatistic !== null && (
                           <ReferenceLine
                           segment={[
@@ -525,18 +538,21 @@ export default function App() {
                             fontWeight: 'bold',
                             fontSize: 16,
                             dy: -10,
-                            dx: resultData.testStatistic >= 0 ? 40 : -40 // The magic fix!
+                            dx: resultData.testStatistic >= 0 ? 40 : -40 
                           }}
                           />
                         )}
-                        {/* 3. The Green Accept Region (Paints the middle!) */}
-                        <Area type="linear" dataKey="yAccept" stroke="none" fill="#10b981" fillOpacity={0.3} />
+                        {/* The Middle Region (Blue for Interval, Green for Hypothesis Accept!) */}
+                        <Area type="linear" dataKey="yAccept" stroke="none" fill={activeTab === 'interval' ? "#3b82f6" : "#10b981"} fillOpacity={0.3} />
 
                         <ReferenceLine x={0} stroke="#475569" strokeWidth={2} />
-                        {/* 2. TRUE Shaded Tails (Paints behind the main blue stroke) */}
-                        <Area type="linear" dataKey="yTail" stroke="none" fill="#ef4444" fillOpacity={0.3} />
+                        
+                        {/* TRUE Shaded Tails (Only show red tails for Hypothesis Testing) */}
+                        {activeTab === 'hypothesis' && (
+                          <Area type="linear" dataKey="yTail" stroke="none" fill="#ef4444" fillOpacity={0.3} />
+                        )}
 
-                        {/* 1. Main Curve (Moved to the BOTTOM! Its 3px stroke will now cleanly cover the tips of the lines) */}
+                        {/* Main Curve (Moved to the BOTTOM to cleanly cover the tips of the lines) */}
                         <Area type="linear" dataKey="y" stroke="#3b82f6" strokeWidth={3} fillOpacity={0.05} fill="#3b82f6" />
 
                       </AreaChart>

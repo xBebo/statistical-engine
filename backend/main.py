@@ -32,24 +32,34 @@ class StatRequest(BaseModel):
     rawData: Optional[List[float]] = None
     marginError: float = 0.05
 
-# Upgraded Generator: Dynamically stretches the X-axis to fit all markers!
-def generate_curve_data(dist_type, df=1, markers=None):
+# Upgraded Generator: Dynamically stretches AND shifts the curve!
+def generate_curve_data(dist_type, df=1, markers=None, loc=0.0, scale=1.0):
     if markers is None: markers = []
     data = []
     
     if dist_type in ["Z", "T"]:
-        # Check if any markers are outside the standard -4 to 4 range
-        min_x = min([-4.0] + markers) - 1.0
-        max_x = max([4.0] + markers) + 1.0
-        x_vals = np.linspace(min_x, max_x, 200) # Increased resolution for wider graphs
+        # Calculate real-world bounds based on the mean (loc) and std error (scale)
+        min_x = loc - 4.0 * scale
+        max_x = loc + 4.0 * scale
+        
+        if markers:
+            min_x = min([min_x] + markers) - (0.5 * scale)
+            max_x = max([max_x] + markers) + (0.5 * scale)
+            
+        x_vals = np.linspace(min_x, max_x, 200)
         
         for x in x_vals:
-            y = stats.norm.pdf(x, 0, 1) if dist_type == "Z" else stats.t.pdf(x, df)
-            data.append({"x": round(float(x), 2), "y": round(float(y), 4)})
+            if dist_type == "Z":
+                y = stats.norm.pdf(x, loc, scale)
+            else:
+                # Shift and scale the T-distribution
+                y = stats.t.pdf((x - loc) / scale, df) / scale
+            data.append({"x": round(float(x), 4), "y": round(float(y), 6)})
             
     elif dist_type == "Chi2":
         max_x = stats.chi2.ppf(0.999, df) if df < 50 else df * 2
-        max_x = max([max_x] + markers) + max(5.0, df * 0.2) # Pad the right side
+        if markers:
+            max_x = max([max_x] + markers) + max(5.0, df * 0.2)
         x_vals = np.linspace(0, max_x, 200)
         
         for x in x_vals:
@@ -89,25 +99,36 @@ def calculate_stats(req: StatRequest):
         response_data["details"] = f"Z-Dist | Margin of Error: {req.marginError} | Crit: {crit:.4f}"
         return response_data
 
+    # UPDATED INTERVAL LOGIC: Sends actual bounds as critical values!
     if req.calcType == "interval":
         if req.mode == "mean":
             is_z = req.isSigmaKnown or req.n >= 30
             df = max(1, req.n - 1)
             crit = stats.norm.ppf(1 - a/2) if is_z else stats.t.ppf(1 - a/2, df)
-            margin = crit * (req.stdDev / np.sqrt(req.n))
-            response_data["result"] = f"[{req.mean - margin:.4f}, {req.mean + margin:.4f}]"
+            se = req.stdDev / np.sqrt(req.n)
+            margin = crit * se
+            lower = req.mean - margin
+            upper = req.mean + margin
+            
+            response_data["result"] = f"[{lower:.4f}, {upper:.4f}]"
             response_data["details"] = f"{'Z' if is_z else 'T'}-Dist | Critical Value: {crit:.4f}"
-            response_data["criticalValues"] = [-crit, crit]
-            response_data["chartData"] = generate_curve_data("Z" if is_z else "T", df, response_data["criticalValues"])
+            response_data["criticalValues"] = [lower, upper] 
+            # Center curve at the mean (loc) using standard error (scale)
+            response_data["chartData"] = generate_curve_data("Z" if is_z else "T", df, [lower, upper], loc=req.mean, scale=se)
 
         elif req.mode == "proportion":
             p_hat = req.successes / req.n
             crit = stats.norm.ppf(1 - a/2)
-            margin = crit * np.sqrt((p_hat * (1 - p_hat)) / req.n)
-            response_data["result"] = f"[{max(0, p_hat - margin):.4f}, {min(1, p_hat + margin):.4f}]"
+            se = np.sqrt((p_hat * (1 - p_hat)) / req.n)
+            margin = crit * se
+            lower = max(0, p_hat - margin)
+            upper = min(1, p_hat + margin)
+            
+            response_data["result"] = f"[{lower:.4f}, {upper:.4f}]"
             response_data["details"] = f"Z-Dist | p̂ = {p_hat:.4f} | Crit: {crit:.4f}"
-            response_data["criticalValues"] = [-crit, crit]
-            response_data["chartData"] = generate_curve_data("Z", 1, response_data["criticalValues"])
+            response_data["criticalValues"] = [lower, upper]
+            # Center curve at proportion
+            response_data["chartData"] = generate_curve_data("Z", 1, [lower, upper], loc=p_hat, scale=se)
 
         elif req.mode == "variance":
             df = max(1, req.n - 1)
@@ -120,6 +141,7 @@ def calculate_stats(req: StatRequest):
             response_data["criticalValues"] = [chi_left, chi_right]
             response_data["chartData"] = generate_curve_data("Chi2", df, response_data["criticalValues"])
 
+    # Hypothesis block remains exactly the same as before since it relies on standard normal
     elif req.calcType == "hypothesis":
         if req.mode == "mean":
             is_z = req.isSigmaKnown or req.n >= 30
@@ -145,7 +167,6 @@ def calculate_stats(req: StatRequest):
             response_data["chartData"] = generate_curve_data("Z" if is_z else "T", df, response_data["criticalValues"] + [test_stat])
 
         elif req.mode == "proportion":
-            # Safety check: Prevent negative square roots and NaN crashes
             if req.h0 <= 0 or req.h0 >= 1:
                 response_data["result"] = "Math Error"
                 response_data["details"] = "H0 for proportions must be between 0 and 1"
@@ -173,7 +194,6 @@ def calculate_stats(req: StatRequest):
             response_data["chartData"] = generate_curve_data("Z", 1, response_data["criticalValues"] + [test_stat])
 
         elif req.mode == "variance":
-            # Safety check: Prevent division by zero
             if req.h0 <= 0:
                 response_data["result"] = "Math Error"
                 response_data["details"] = "H0 for variance must be > 0"

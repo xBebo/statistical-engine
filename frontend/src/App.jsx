@@ -124,7 +124,7 @@ export default function App() {
 
   // Extract the Confidence Interval bounds from the result string to use as graph labels
   const ciBounds = activeTab === 'interval' && resultData?.result?.startsWith('[') 
-    ? resultData.result.replace(/[\[\]]/g, '').split(',').map(s => s.trim()) 
+    ? resultData.result.replace(/[[\]]/g, '').split(',').map(s => s.trim()) 
     : null;
 
   // Ensure the UI prints the true mathematical variance
@@ -140,7 +140,7 @@ export default function App() {
             {/* Statistical Engine */}
             Baraa Allam
           </h1>
-          <p className="text-lg font-medium text-slate-500">Lectures 4 • 5 • 6 • 7</p>
+          {/* <p className="text-lg font-medium text-slate-500">Lectures 4 • 5 • 6 • 7</p> */}
         </div>
 
         {/* Top Navigation */}
